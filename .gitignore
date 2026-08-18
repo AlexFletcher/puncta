@@ -1,0 +1,6 @@
+# Generated figures, and the cached trajectories Figure 12 writes alongside them.
+figures/
+
+# Python bytecode
+__pycache__/
+*.py[cod]

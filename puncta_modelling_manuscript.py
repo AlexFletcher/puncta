@@ -21,8 +21,7 @@ Figure  ->  function                        ->  output file
    9        fig9_coarsening()                    AB_coarsening.png
    10       fig10_two_reservoir()                AB_tworeservoir.png
    11       fig11_two_reservoir_plane()          AB_tworeservoir_plane.png       *
-   12       fig12_sorting()                      AB_sorting_abc.png              *
-   12d      fig12d_polarity()                    AB_polarity.png
+   12       fig12_sorting()                      AB_sorting.png                  *
 
    * needs the funpy spectral library (see Dependencies); everything else uses
      NumPy/SciPy/Matplotlib alone.
@@ -36,7 +35,7 @@ NumPy, SciPy and Matplotlib throughout. Figures 8, 11 and 12 additionally need
 funpy, which supplies the ultraspherical resolvent behind the nonlocal
 eigenvalue problem and the exponential integrator behind the sorting runs:
 
-    git clone https://github.com/buttenschoen-lab-umass/funpy
+    git clone https://github.com/adrs0049/funpy
     cd funpy && pip install .
 
 It is imported only when one of those three figures is requested.
@@ -192,7 +191,7 @@ def _require_funpy():
         raise SystemExit(
             "Figures 8, 11 and 12 need the funpy spectral library, which does "
             "not appear to be installed.\n"
-            "    git clone https://github.com/buttenschoen-lab-umass/funpy\n"
+            "    git clone https://github.com/adrs0049/funpy\n"
             "    cd funpy && pip install .\n"
             f"  (import failed: {exc})")
     return Fun, ChebOp, Resolvent, PDEOperator, solve_pde
@@ -1042,13 +1041,14 @@ def fig12_sorting():
         print(f"  V'={Vp:+.3f}: s {data[Vp]['sep'][0]:.3f} -> {data[Vp]['sep'][-1]:.3f}",
               flush=True)
 
-    fig = plt.figure(figsize=(11.4, 3.9))
-    gs = gridspec.GridSpec(2, 3, figure=fig, width_ratios=[1.05, 1.0, 1.0],
-                           hspace=0.45, wspace=0.32)
+    fig = plt.figure(figsize=(9.8, 7.2))
+    gs = gridspec.GridSpec(2, 2, figure=fig, hspace=0.42, wspace=0.30)
+    gsa = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[0, 0],
+                                           hspace=0.14)
 
     # ---- (a) the outcome ----
     for row, (Vp, tag) in enumerate(((-0.03, "locked"), (0.03, "sorted"))):
-        ax = fig.add_subplot(gs[row, 0])
+        ax = fig.add_subplot(gsa[row])
         d = data[Vp]
         ax.plot(d["xh"], d["cf"], color="#4477AA", lw=1.8, label="$c$")
         ax.plot(d["xh"], d["cdf"], color="#CC6677", lw=1.8, ls="--",
@@ -1065,7 +1065,7 @@ def fig12_sorting():
             ax.set_xlabel("$x$")
 
     # ---- (b) the switch ----
-    ax = fig.add_subplot(gs[:, 1])
+    ax = fig.add_subplot(gs[0, 1])
     cmap = plt.get_cmap("coolwarm")
     vmax = max(abs(v) for v in LADDER)
     for Vp in LADDER:
@@ -1083,7 +1083,7 @@ def fig12_sorting():
     # ---- (c) the rate ----
     # s = 0 is an equilibrium, so the window has to be traversed: V' > 0 starts
     # inside it and separates, V' < 0 starts outside and collapses through.
-    ax = fig.add_subplot(gs[:, 2])
+    ax = fig.add_subplot(gs[1, 0])
     pts = []
     for Vp in VS_LAMBDA:
         s0, tsp = (0.30, 30.0) if Vp > 0 else (1.60, 9.0)
@@ -1111,14 +1111,33 @@ def fig12_sorting():
     ax.set_title("(c) the rate, linear through the origin", fontsize=9.5)
     ax.legend(frameon=False, fontsize=7.6, loc="upper left")
 
-    fig.tight_layout()
-    _save(fig, "AB_sorting_abc.png")
+    # ---- (d) the drift law ----
+    # The one panel of the figure integrated with the finite-difference IMEX
+    # scheme (two coupled triplets) rather than spectrally.
+    ax = fig.add_subplot(gs[1, 1])
+    pred, meas = _drift_law_points()
+    lim = max(np.abs(pred).max(), np.abs(meas).max()) * 1.15
+    ax.plot([-lim, lim], [-lim, lim], "k--", lw=1.0, label="$y=x$")
+    ax.scatter(pred, meas, s=45, color="#6a3d9a", zorder=3)
+    ax.set(xlabel=r"predicted $-2.5\,\mathcal{V}'\,(c^\dagger)'(x_c)$",
+           ylabel=r"measured drift $\dot x_c$")
+    ax.set_title(r"(d) Drift law (varying $\mathcal{V}'$, separation)", fontsize=9.5)
+    ax.legend(frameon=False, fontsize=8, loc="upper left")
+    ax.grid(alpha=0.25)
+    print(f"  drift-law fit slope={np.polyfit(pred, meas, 1)[0]:.3f} (expect ~1.0)")
+
+    # tight_layout is incompatible with the nested gridspec of panel (a)
+    fig.subplots_adjust(left=0.075, right=0.985, top=0.955, bottom=0.075)
+    _save(fig, "AB_sorting.png")
 
 
 # =========================================================================== #
-#  Figure 12(d) : spike-level polarity (drift law + segregation/merging)      #
+#  Figure 12(d) machinery : the drift law, measured with the IMEX scheme      #
 # =========================================================================== #
-def fig12d_polarity():
+# Six short two-triplet integrations across both signs of V' and three
+# separations, each compared with the prediction -2.5 V' (c^dag)'(x_c) of the
+# constant-gradient drift law. Finite-difference IMEX, unlike panels (a)-(c).
+def _drift_law_points():
     alpha, ELL, n, DM = ALPHA_SPIKE, ELL_SPIKE, 2.5, 1000.0
     NX, dt = 300, 0.003
     dx = ELL / NX; x = (np.arange(NX) + 0.5) * dx
@@ -1133,7 +1152,7 @@ def fig12d_polarity():
 
     shift = lambda f, d: np.interp(x - d, x, f, left=f[0], right=f[-1])
     cen = lambda c: (x * np.clip(c, 0, None)).sum() / np.clip(c, 0, None).sum()
-    a0, c0 = relax(ELL / 2); print(f"c_max={c0.max():.2f}")
+    a0, c0 = relax(ELL / 2); print(f"  c_max={c0.max():.2f}")
 
     def step(a, ad, c, cd, kappa):
         Vc, Vcd = 1 + kappa * cd, 1 + kappa * c
@@ -1141,7 +1160,6 @@ def fig12d_polarity():
         cd = luC.solve(cd + dt * (alpha * cd**2 * ad**2 - Vcd * cd)); ad = luM.solve(ad + dt * (-alpha * cd**2 * ad**2 + Vcd * cd))
         return a, ad, c, cd
 
-    # (b) drift law
     pred, meas = [], []
     for kappa in (-0.012, 0.012):
         for d in (3.0, 3.5, 4.0):
@@ -1153,44 +1171,15 @@ def fig12d_polarity():
                 if sidx % 25 == 0:
                     ts.append((sidx + 1) * dt); xs.append(cen(c))
             pred.append(-2.5 * kappa * cdp); meas.append(np.polyfit(ts, xs, 1)[0])
-    pred, meas = np.array(pred), np.array(meas)
-
-    # (a) trajectories
-    def traj(kappa, xi0, T):
-        a, ad, c, cd = a0.copy(), a0.copy(), shift(c0, +xi0), shift(c0, -xi0)
-        ts, xc, xd = [0.0], [cen(c)], [cen(cd)]
-        for sidx in range(int(T / dt)):
-            a, ad, c, cd = step(a, ad, c, cd, kappa)
-            if sidx % 40 == 0:
-                ts.append((sidx + 1) * dt); xc.append(cen(c)); xd.append(cen(cd))
-        return np.array(ts), np.array(xc), np.array(xd)
-
-    tP, xcP, xdP = traj(+0.012, 0.2, 26.0)
-    tN, xcN, xdN = traj(-0.012, 3.0, 26.0)
-
-    fig, (axA, axB) = plt.subplots(1, 2, figsize=(12, 4.5))
-    axA.plot(tP, xcP, color="#6a3d9a", lw=2, label=r"$c$"); axA.plot(tP, xdP, color="#8c564b", lw=2, label=r"$c^\dagger$")
-    axA.plot(tN, xcN, color="#6a3d9a", lw=2, ls="--"); axA.plot(tN, xdN, color="#8c564b", lw=2, ls="--")
-    axA.set(xlabel="time $t$", ylabel="punctum position")
-    axA.set_title(r"(a) $\mathcal{V}'>0$ segregates (solid); $\mathcal{V}'<0$ merges (dashed)")
-    axA.legend(frameon=False, fontsize=11, loc="center right")
-    lim = max(np.abs(pred).max(), np.abs(meas).max()) * 1.1
-    axB.plot([-lim, lim], [-lim, lim], "k--", lw=1, label="$y=x$")
-    axB.scatter(pred, meas, s=55, color="#6a3d9a", zorder=3)
-    axB.set(xlabel=r"predicted $-2.5\,\mathcal{V}'\,(c^\dagger)'(x_c)$", ylabel=r"measured drift $\dot x_c$")
-    axB.set_title(r"(b) Drift law (varying $\mathcal{V}'$, separation)")
-    axB.legend(frameon=False, fontsize=11, loc="upper left"); axB.grid(alpha=0.25)
-    fig.tight_layout()
-    _save(fig, "AB_polarity.png")
-    print(f"drift-law fit slope={np.polyfit(pred, meas, 1)[0]:.3f} (expect 1.0)")
+    return np.array(pred), np.array(meas)
 
 
 # =========================================================================== #
 #  Driver                                                                     #
 # =========================================================================== #
 # Selectable by figure number or by output label; the numbers are the
-# manuscript's current ones. Figure 12 is produced by two functions: (a)-(c)
-# spectrally by fig12_sorting, (d) by the finite-difference fig12d_polarity.
+# manuscript's current ones. Figure 12 is a single four-panel figure: panels
+# (a)-(c) integrated spectrally, panel (d) by the finite-difference drift law.
 FIGURES = {
     "2": fig2_3_dispersion_nullcline, "3": fig2_3_dispersion_nullcline,
     "4": fig4_full_six_species,
@@ -1201,7 +1190,7 @@ FIGURES = {
     "9": fig9_coarsening,
     "10": fig10_two_reservoir,
     "11": fig11_two_reservoir_plane,
-    "12": fig12_sorting, "12d": fig12d_polarity,
+    "12": fig12_sorting,
     # aliases: the label each function writes
     "AB_dispersion": fig2_3_dispersion_nullcline,
     "AB_nullcline": fig2_3_dispersion_nullcline,
@@ -1214,11 +1203,10 @@ FIGURES = {
     "AB_tworeservoir": fig10_two_reservoir,
     "AB_tworeservoir_plane": fig11_two_reservoir_plane,
     "AB_sorting": fig12_sorting,
-    "AB_polarity": fig12d_polarity,
 }
 
 # Default run order (the aliases above would otherwise duplicate every entry).
-DEFAULT_ORDER = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "12d"]
+DEFAULT_ORDER = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
 
 
 def main():

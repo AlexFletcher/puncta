@@ -27,6 +27,11 @@ problems and the ETDRK4 integrator behind the sorting runs:
 funpy is imported only when one of those three figures is requested, so
 every other figure runs without it.
 
+funpy currently requires `scipy < 1.18` (SciPy 1.18 removed the private
+`scipy.fft._pocketfft` module that funpy's compiled extensions import);
+if you see `ModuleNotFoundError: No module named 'scipy.fft._pocketfft'`,
+run `pip install "scipy<1.18"`.
+
 ## A note for Windows users
 
 funpy builds Cython/C extensions on installation, which on Windows
